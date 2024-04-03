@@ -1,7 +1,7 @@
 {
-  "name": "helioslauncher",
+  "name": "bearcraftlauncher",
   "version": "2.2.1",
-  "productName": "Helios Launcher",
+  "productName": "Bearcraft Launcher",
   "description": "Modded Minecraft Launcher",
   "author": "Daniel Scalzi (https://github.com/dscalzi/)",
   "license": "UNLICENSED",
@@ -37,7 +37,11 @@
     "jquery": "^3.7.1",
     "lodash.merge": "^4.6.2",
     "semver": "^7.6.0",
-    "toml": "^3.0.0"
+    "toml": "^3.0.0",
+    "@types/three": "^0.156.0",
+    "skinview-utils": "^0.7.1",
+    "three": "^0.156.1",
+    "skinview3d": "3.0.0"
   },
   "devDependencies": {
     "electron": "^29.1.0",
@@ -46,6 +50,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dscalzi/HeliosLauncher.git"
+    "url": "git+https://github.com/meloncafe/BearcraftLauncher.git"
   }
 }

@@ -641,6 +641,7 @@ function populateAuthAccounts(){
         const accHtml = `<div class="settingsAuthAccount" uuid="${acc.uuid}">
             <div class="settingsAuthAccountLeft">
                 <img class="settingsAuthAccountImage" alt="${acc.displayName}" src="https://mc-heads.net/body/${acc.uuid}/60">
+                <div class="skin_change_overlay">${Lang.queryJS('settings.skinChange.buttonSkinChange')}</div>
             </div>
             <div class="settingsAuthAccountRight">
                 <div class="settingsAuthAccountDetails">
@@ -660,6 +661,49 @@ function populateAuthAccounts(){
                     </div>
                 </div>
             </div>
+            
+            <!-- 스킨 파일 입력 -->
+            <input type="file" id="skinFileInput" style="display: none" accept="image/*">
+            
+            <!-- 모달 창 -->
+            <div id="skin-change-modal" class="modal">
+                <div class="modal-content">
+                    <p id="skinChangeModalText"><!-- Messages --></p>
+                </div>
+            </div>
+            <div id="skinPreviewModal" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h2 id="skinPreviewTitle">${Lang.queryJS('settings.skinChange.skinPreviewTitle')}</h2>
+                    <div class="skin-previews">
+                        <div class="skin-preview-canvas-container">
+                            <canvas id="skinPreviewCanvas"></canvas>                        
+                        </div>
+                        <div class="skin-type-options">
+                            <div class="skin-option">
+                                <label>
+                                    <input type="radio" name="skinType" value="auto-detect" checked> ${Lang.queryJS('settings.skinChange.buttonSkinAuto')}
+                                </label>
+                            </div>
+                            <div class="skin-option">
+                                <label>
+                                    <input type="radio" name="skinType" value="default"> ${Lang.queryJS('settings.skinChange.buttonSkinClassic')}
+                                </label>
+                            </div>
+                            <div class="skin-option">
+                                <label>
+                                    <input type="radio" name="skinType" value="slim"> ${Lang.queryJS('settings.skinChange.buttonSkinSlim')}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="applySkin" class="apply-button">
+                        <span id="applyButtonText">${Lang.queryJS('settings.skinChange.buttonSkinApply')}</span>
+                        <span id="loadingAnimation" class="loading-dots" hidden>...</span>
+                    </button>
+                    <img id="selectedSkin" alt="" style="display: none">
+                </div>
+            </div>
         </div>`
 
         if(acc.type === 'microsoft') {
@@ -672,6 +716,204 @@ function populateAuthAccounts(){
 
     settingsCurrentMicrosoftAccounts.innerHTML = microsoftAuthAccountStr
     settingsCurrentMojangAccounts.innerHTML = mojangAuthAccountStr
+
+    changeSkin()
+}
+
+let skinViewer
+let skinUrl
+
+function openSkinChangeModal(message) {
+    document.getElementById('skinChangeModalText').textContent = message
+    document.getElementById('skin-change-modal').style.display = 'block'
+
+    setTimeout(closeSkinChangeModal, 3000)
+}
+
+function closeSkinChangeModal() {
+    document.getElementById('skin-change-modal').style.display = 'none'
+}
+
+function changeSkin() {
+    const fileInput = document.getElementById('skinFileInput')
+    const modal = document.getElementById('skinPreviewModal')
+    const span = document.getElementsByClassName('close')[0]
+
+    // 이벤트 리스너를 모든 skin_change_overlay 요소에 추가
+    document.querySelectorAll('.skin_change_overlay').forEach(item => {
+        item.addEventListener('click', function() {
+            fileInput.value = ''
+            fileInput.click()
+        })
+    })
+
+    // 파일 입력 요소에 이벤트 리스너 추가
+    fileInput.addEventListener('change', handleFileInputChange)
+
+    // 모달 닫기 버튼 이벤트 리스너
+    if (span) {
+        span.addEventListener('click', function() {
+            modal.style.display = 'none'
+        })
+    }
+
+    // 모달 외부 클릭 이벤트 리스너
+    window.addEventListener('click', function(event) {
+        if (event.target == modal) {
+            modal.style.display = 'none'
+        }
+    })
+
+    document.getElementById('applySkin').addEventListener('click', function() {
+        const button = this
+        const buttonText = document.getElementById('applyButtonText')
+        const loadingAnimation = document.getElementById('loadingAnimation')
+
+        const skinType = document.querySelector('input[name="skinType"]:checked').value ? 'default' : 'classic'
+
+        /*const skinDataURL = skinType === 'classic' ?
+            document.getElementById('skinPreviewClassic').src :
+            document.getElementById('skinPreviewSlim').src*/
+        const skinDataURL = document.getElementById('selectedSkin').src
+
+        const accessToken = ConfigManager.getSelectedAccount().accessToken
+        const selectedProfile = ConfigManager.getSelectedAccount().uuid
+
+        button.disabled = true
+        buttonText.hidden = true
+        loadingAnimation.hidden = false
+
+        AuthManager.validateSelected().then (() => {
+            uploadToImgur(skinDataURL)
+                .then(imgurResponse => {
+                    // Mojang API에 스킨 변경 요청을 보냅니다.
+                    changeMinecraftSkin(accessToken, selectedProfile, skinType, imgurResponse.data.link)
+                        .then(() => {
+                            openSkinChangeModal(`${Lang.queryJS('settings.skinChange.successSkinChange')}`)
+                            deleteFromImgur(imgurResponse.data.deletehash)
+                        })
+                        .catch(error => {
+                            openSkinChangeModal(`${Lang.queryJS('settings.skinChange.errorSkinChange')}: ${error}`)
+                            deleteFromImgur(imgurResponse.data.deletehash)
+                        })
+                })
+                .catch(error => {
+                    alert(`${Lang.queryJS('settings.skinChange.errorSkinChange')}: ${error}}`)
+                })
+                .finally(() => {
+                    button.disabled = false
+                    buttonText.hidden = false
+                    loadingAnimation.hidden = true
+                    modal.style.display = 'none'
+                })
+        })
+    })
+}
+
+let imgurClientId = '9b940e550267f65'
+
+function uploadToImgur(imageDataURL) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', 'https://api.imgur.com/3/image')
+        xhr.setRequestHeader('Authorization', 'Client-ID ' + imgurClientId)
+        xhr.setRequestHeader('Content-Type', 'application/json')
+
+        const base64EncodedImage = imageDataURL.split(',')[1]
+
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                resolve(JSON.parse(xhr.responseText))
+            } else {
+                reject(xhr.responseText)
+            }
+        }
+
+        xhr.send(JSON.stringify({
+            image: base64EncodedImage,
+            type: 'base64'
+        }))
+    })
+}
+
+function changeMinecraftSkin(accessToken, profileId, skinType, imageUrl) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', 'https://api.minecraftservices.com/minecraft/profile/skins')
+        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
+        xhr.setRequestHeader('Content-Type', 'application/json')
+
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                resolve()
+            } else {
+                reject(xhr.responseText)
+            }
+        }
+
+        xhr.send(JSON.stringify({
+            variant: skinType,
+            url: imageUrl
+        }))
+    })
+}
+
+function deleteFromImgur(deleteHash) {
+    const xhr = new XMLHttpRequest()
+    xhr.open('DELETE', `https://api.imgur.com/3/image/${deleteHash}`)
+    xhr.setRequestHeader('Authorization', 'Client-ID ' + imgurClientId)
+    xhr.send()
+}
+
+function handleFileInputChange() {
+    if (this.files && this.files[0]) {
+        const fileReader = new FileReader()
+
+        fileReader.onload = async function (e) {
+            skinUrl = e.target.result
+
+            skinViewer = new skinview3d.SkinViewer({
+                canvas: document.getElementById('skinPreviewCanvas'),
+            })
+
+            skinViewer.width = 200
+            skinViewer.height = 200
+            skinViewer.fov = 70
+            skinViewer.zoom = 0.90
+            skinViewer.animation = new skinview3d.WalkingAnimation()
+            skinViewer.animation.speed = 1
+            skinViewer.controls.enableRotate = true
+            skinViewer.controls.enableZoom = true
+            skinViewer.controls.enablePan = true
+
+            await skinViewer.loadSkin(skinUrl, {
+                model: document.querySelector('input[name="skinType"]:checked').value
+            })
+
+            const selectedSkin = document.getElementById('selectedSkin')
+            selectedSkin.src = skinUrl
+
+            const skinTypeRadios = document.querySelectorAll('input[name="skinType"]')
+            skinTypeRadios.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    reloadSkin()
+                })
+            })
+
+            const modal = document.getElementById('skinPreviewModal')
+            if (modal) {
+                modal.style.display = 'block'
+            }
+        }
+
+        fileReader.readAsDataURL(this.files[0])
+    }
+}
+
+function reloadSkin() {
+    skinViewer.loadSkin(skinUrl, {
+        model: document.querySelector('input[name="skinType"]:checked').value
+    })
 }
 
 /**
